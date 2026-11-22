@@ -7,6 +7,19 @@ project has no tagged releases yet, so everything to date lives under
 
 ## Unreleased
 
+### Fixed
+
+- **`DoJailAction` (jail start/stop) hit a path that no longer exists on Sylve 0.3.x.**
+  The client posted to `/api/jail/action/{action}/{ctid}`; since v0.3.0 the route is
+  `/api/jail/{ctid}/actions/{action}` (same shape as the VM one). Sylve answers an
+  unknown API path with its single-page-app `index.html` and HTTP 200, and the old
+  code ignored the response body, so the call "succeeded" without doing anything.
+  Found 2026-11-22 while stopping a jail for a rollback. The client now tries the
+  v0.3.x path first, requires the JSON reply to carry `status: "success"` (an HTML
+  body fails the decode), and falls back to the pre-v0.3.0 path only if that fails.
+  Checked against the v0.3.0 and v0.3.1 routers: every other path in the client
+  matches (`GetDomainStatus` already had the same two-path fallback).
+
 ### Documentation
 
 - **Debian 13 (trixie) cloud-init on this provider: three real bugs,

@@ -179,8 +179,8 @@ func (c *Client) SetJailMemory(ctx context.Context, ctid int, memoryBytes int) e
 }
 
 // JailAction is a lifecycle action queued via POST
-// /api/jail/action/{action}/{ctId} -- action before ctid, same order as
-// VMAction's real path.
+// /api/jail/{ctid}/actions/{action} (v0.3.0 and later, confirmed against the
+// v0.3.0 and v0.3.1 router: ctid in the prefix, same shape as VMAction).
 type JailAction string
 
 const (
@@ -189,6 +189,31 @@ const (
 )
 
 // DoJailAction queues a lifecycle action (start/stop) for a jail.
+//
+// FOUND LIVE 2026-11-22 (Sylve 0.3.1): the pre-v0.3.0 path
+// /api/jail/action/{action}/{ctid} is not registered any more and Sylve's SPA
+// answers it with HTTP 200 and index.html, so a call that ignores the response
+// body "succeeds" without doing anything. This used to be the only path here.
+// Now: the v0.3.x path first, and the reply must be Sylve's JSON envelope with
+// status "success" (an HTML body fails the decode, so it cannot pass as success).
+// Only if that fails is the pre-v0.3.0 path tried, same self-adapting idea as
+// GetDomainStatus for a fleet that is not on one Sylve version yet.
 func (c *Client) DoJailAction(ctx context.Context, ctid int, action JailAction) error {
-	return c.do(ctx, "POST", fmt.Sprintf("/api/jail/action/%s/%d", action, ctid), nil, nil)
+	var out struct {
+		Status string `json:"status"`
+	}
+	newErr := c.do(ctx, "POST", fmt.Sprintf("/api/jail/%d/actions/%s", ctid, action), nil, &out)
+	if newErr == nil && out.Status == "success" {
+		return nil
+	}
+	var legacy struct {
+		Status string `json:"status"`
+	}
+	if err := c.do(ctx, "POST", fmt.Sprintf("/api/jail/action/%s/%d", action, ctid), nil, &legacy); err == nil && legacy.Status == "success" {
+		return nil
+	}
+	if newErr != nil {
+		return fmt.Errorf("jail %d action %q failed: %w", ctid, action, newErr)
+	}
+	return fmt.Errorf("jail %d action %q: unexpected reply status %q", ctid, action, out.Status)
 }
